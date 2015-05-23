@@ -19,6 +19,10 @@ library
   exposed-modules:     L1
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8, hmatrix >=0.16 && <0.17
+  build-depends:       base >=4.7 && <4.8
+                     , hmatrix
+                     , dynobud
+                     , casadi-bindings
+                     , linear
   hs-source-dirs:      src
   default-language:    Haskell2010
