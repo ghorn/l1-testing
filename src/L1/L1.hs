@@ -213,23 +213,26 @@ prepareL1 userOde l1params = do
   let fullOde :: JTuple (FullL1State x) (JV Id) MX -> JTuple (JV (L1States x)) (JV x) MX
       fullOde (JTuple fullL1States r) = JTuple l1dot x'
         where
-          l1dot = ddtL1States l1params dx'dx dx'du (col r) x (catJV' controllerState')
+          l1dot = ddtL1States l1params dx'dx dx'du (col r) (col xestimate) (catJV' controllerState')
 
-          FullL1State{..} = split fullL1States
-          controllerState'@(L1States{..}) = splitJV' controllerState
+          FullL1State controllerState'' systemState'' = split fullL1States
+          controllerState'@(L1States xhat u wqsHat) = splitJV' controllerState''
+          systemState' = splitJV' systemState''
 
+          xestimate = catJV' (ffsX systemState')
+          
           --jacIn :: JacIn (JTuple f0 (JV Id)) (WQS x) (J (JV Id) MX)
-          jacIn = JacIn (cat (JTuple (catJV' l1sXhat) (catJV' (Id l1sU)))) (catJV' l1sWqsHat)
+          jacIn = JacIn (cat (JTuple (catJV' xhat) (catJV' (Id u))))
+                        (catJV' wqsHat)
           dx'dxu :: M (JV x) (JTuple (JV x) (JV u)) MX
           x' :: J (JV x) MX
           Jac dx'dxu x' _ = call userJac jacIn
 
           dx'dx :: M (JV x) (JV x) MX
           dx'du :: M (JV x) (JV u) MX
+          -- dx'dx = fromHMat $ HMat.fromLists [[0, 1], [-1, -1.4]]
+          -- dx'du = fromHMat $ HMat.fromLists [[0], [1]]
           (dx'dx, dx'du) = hsplitTup dx'dxu
-
-          x :: M (JV x) (JV Id) MX
-          x = col $ catJV' (ffsX (splitJV' systemState))
 
   fullOdeMX <- toMXFun "full ode with l1" fullOde
 
@@ -258,7 +261,7 @@ ddtL1States ::
   -> S a
   -> M (JV x) (JV Id) a
   -> J (JV (L1States x)) a -> J (JV (L1States x)) a
-ddtL1States L1Params{..} am b r x l1states =
+ddtL1States L1Params{..} am b r xestimate l1states =
   catJV' $ L1States (splitJV' (uncol xhatdot)) (unId (splitJV' (uncol udot))) wqsDot
   where
     L1States xhat0 u0 wqsHat' = splitJV' l1states
@@ -288,7 +291,7 @@ ddtL1States L1Params{..} am b r x l1states =
 
     -- Compute error between reference model and true state
     xtilde :: M (JV x) (JV Id) a
-    xtilde = xhat - x
+    xtilde = xhat - xestimate
     -- Update parameter estimates.  The estimate derivatives we
     -- compute here will be used to form the next step's estimates; we
     -- use the values we receive as arguments for everything at this
@@ -303,14 +306,14 @@ ddtL1States L1Params{..} am b r x l1states =
     omegahatdot = gp l1pOmegaMax omegahat (xtpb `scale` u)
     sigmahatdot = gp l1pSigmaMax sigmahat xtpb
     thetahatdot :: M (JV x) (JV Id) a
-    thetahatdot = gp l1pThetaMax thetahat (xtpb `scale` x)
+    thetahatdot = gp l1pThetaMax thetahat (xtpb `scale` xestimate)
     -- Update reference model state using the previous values.  The
     -- 'xhat' value we receive should be the model's prediction (using
     -- the previous xhat and xhatdot) for the true state 'x' at this
     -- timestep.
 
     eta :: S a
-    eta = omegahat * u + thetahat `dot` x + sigmahat
+    eta = omegahat * u + thetahat `dot` xestimate + sigmahat
 
     xhatdot :: M (JV x) (JV Id) a
     xhatdot = am `mm` xhat + eta `scale` b
