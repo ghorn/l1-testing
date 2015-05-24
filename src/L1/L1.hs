@@ -22,6 +22,7 @@ import qualified Numeric.GSL.ODE as ODE
 import qualified Numeric.LinearAlgebra.Data as D
 import qualified Data.Vector as V
 import qualified Data.Vector.Storable as SV
+import qualified Numeric.LinearAlgebra.HMatrix as HMat
 
 import Casadi.CMatrix ( CMatrix )
 import Casadi.SX ( SX )
@@ -32,7 +33,7 @@ import Casadi.Overloading ( SymOrd(..) )
 import Accessors
 
 import Dyno.Vectorize
-import Dyno.View.M ( M, ms, mm, trans, uncol, col, hsplitTup )
+import Dyno.View.M ( M, ms, mm, trans, uncol, col, hsplitTup, fromHMat )
 import Dyno.View.Viewable
 import Dyno.View.JV
 import Dyno.View.Fun
@@ -173,9 +174,9 @@ instance Vectorize x => View (FullL1State x)
 data L1Params x a =
   L1Params
   { l1pETheta0 :: S a
-  , l1pOmegaMax :: S a
-  , l1pSigmaMax :: S a
-  , l1pThetaMax :: S a
+  , l1pOmegaBounds :: (S a, S a)
+  , l1pSigmaBounds :: (S a, S a)
+  , l1pThetaBounds :: (M x (JV Id) a, S a)
   , l1pGamma :: S a
   , l1pKg :: S a
   , l1pK :: S a
@@ -231,9 +232,9 @@ prepareL1 userOde l1params = do
 
           dx'dx :: M (JV x) (JV x) MX
           dx'du :: M (JV x) (JV u) MX
-          -- dx'dx = fromHMat $ HMat.fromLists [[0, 1], [-1, -1.4]]
-          -- dx'du = fromHMat $ HMat.fromLists [[0], [1]]
-          (dx'dx, dx'du) = hsplitTup dx'dxu
+          dx'dx = fromHMat $ HMat.fromLists [[0, 1], [-1, -1.4]]
+          dx'du = fromHMat $ HMat.fromLists [[0], [1]]
+          --(dx'dx, dx'du) = hsplitTup dx'dxu
 
   fullOdeMX <- toMXFun "full ode with l1" fullOde
 
@@ -297,17 +298,23 @@ ddtL1States L1Params{..} am b r xestimate l1states =
     -- compute here will be used to form the next step's estimates; we
     -- use the values we receive as arguments for everything at this
     -- step.
-    xtpb :: S a
-    xtpb = (-(trans xtilde)) `mm` l1pP `mm` b
+    xtpbg :: S a
+    xtpbg = l1pGamma `scale` ((-(trans xtilde)) `mm` l1pP `mm` b)
 
-    gp :: View f => S a -> M f (JV Id) a -> M f (JV Id) a -> M f (JV Id) a
-    gp somethingMax th sig = l1pGamma `scale` proj l1pETheta0 somethingMax th sig
+    gp :: View f => (M f (JV Id) a, S a)-> M f (JV Id) a -> M f (JV Id) a -> M f (JV Id) a
+    gp (scenter, snorm) th sig = unshift ret0
+      where
+        ret0 = proj l1pETheta0 snorm (shift th) (shift sig)
+
+        shift z   = z - scenter
+        unshift z = z + scenter
+
 
     omegahatdot,sigmahatdot :: S a
-    omegahatdot = gp l1pOmegaMax omegahat (xtpb `scale` u)
-    sigmahatdot = gp l1pSigmaMax sigmahat xtpb
+    omegahatdot = gp l1pOmegaBounds omegahat (xtpbg `scale` u)
+    sigmahatdot = gp l1pSigmaBounds sigmahat xtpbg
     thetahatdot :: M (JV x) (JV Id) a
-    thetahatdot = gp l1pThetaMax thetahat (xtpb `scale` xestimate)
+    thetahatdot = gp l1pThetaBounds thetahat (xtpbg `scale` xestimate)
     -- Update reference model state using the previous values.  The
     -- 'xhat' value we receive should be the model's prediction (using
     -- the previous xhat and xhatdot) for the true state 'x' at this

@@ -1,5 +1,5 @@
 clear all
-clc
+clc; clf;
 fuckme
 
 subplot(411)

@@ -53,27 +53,33 @@ ddtRoboX (FullSystemState x@(RoboX p v) (WQS omegaBar theta sigmaBar)) u  =
 --ddtRoboX x@(RoboX p v) u theta sigmaBar omegaBar =
   RoboX
   { xPos = v
-  , xVel = (u + m*g*r*(cos p)/2 + sigmaBar + x `dot` theta) * omegaBar
+  , xVel = (u + m*g*armLen*(cos p)/2 + sigmaBar + x `dot` theta) * omegaBar
   }
   where
     m = 1
     g = 9.8
-    r = 0.5
+    armLen = 0.5
+
+fromBounds :: Fractional a => a -> a -> (a, a)
+fromBounds lb ub = (0.5 * (lb + ub), 0.5*(ub - lb))
 
 l1params :: L1Params (JV RoboX) MX
 l1params =
   L1Params
   { l1pETheta0 = 0.1
-  , l1pOmegaMax = 10
-  , l1pSigmaMax = 10
-  , l1pThetaMax = 5
-  , l1pGamma = 10e3
+  , l1pOmegaBounds = fromBounds 0.1 2
+  , l1pSigmaBounds = fromBounds (-50) 50
+  , l1pThetaBounds = (0, 5)
+  , l1pGamma = 100e3
   , l1pKg = 1
   , l1pK = 60
   , l1pP = fromHMat $
            HMat.fromLists
-           [ [0.812564928052004, -0.359997120023040]
-           , [-0.359997120023040, 0.308568960019748]
+--           [ [0.812564928052004, -0.359997120023040]
+--           , [-0.359997120023040, 0.308568960019748]
+--           ]
+           [ [1.41429,   0.50000]
+           , [ 0.50000,   0.7142]
            ]
   , l1pW = 1
   }
@@ -90,19 +96,23 @@ main :: IO ()
 main = do
   lol <- prepareL1 ddtRoboX l1params
   let x0 :: RoboX Double
-      x0 = RoboX 1 2
+      x0 = RoboX 0 0
 
       l0 :: L1States RoboX Double
       l0 =
         L1States
-        { l1sXhat = fill 1
+        { l1sXhat = x0
         , l1sU = 0
-        , l1sWqsHat = fill 0.1
+        , l1sWqsHat = wqs0
         }
-      reference = 0
+      reference = 0.0
 
       wqs0 :: WQS RoboX Double
-      wqs0 = fill 0.1
+      wqs0 = fill 1
+--      wqs0 = WQS { wqsOmega = 1
+--                 , wqsTheta = RoboX 0 0
+--                 , wqsSigma = 0
+--                 }
 
   let dfdt :: WQS RoboX Double -> Double -> SimStates RoboX Double -> SimStates RoboX Double
       dfdt wqs r (SimStates x l1) = unsafePerformIO $ do
@@ -115,7 +125,10 @@ main = do
         let x' = ddtRoboX fss (l1sU l1)
         return (SimStates x' l1')
 
-      simTimes = [0,0.01..2]
+--  print $ dfdt wqs0 reference (SimStates x0 l0)
+
+--      simTimes = [0,0.01..2]
+      simTimes = [0,0.001..25]
       sols :: [SimStates RoboX Double]
       sols = integrate' (dfdt wqs0 reference) 0.01 simTimes (SimStates x0 l0)
 --  mapM_ print sols
