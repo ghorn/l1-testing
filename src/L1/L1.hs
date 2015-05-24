@@ -84,13 +84,13 @@ fproj :: (View x, Viewable a, CMatrix a) => S a -> S a -> M x (JV Id) a -> S a
 fproj etheta thetamax theta =
   ((etheta + 1) * theta `dot` theta - maxsq) / (etheta * maxsq)
   where
-    maxsq = thetamax `dot` thetamax
+    maxsq = thetamax * thetamax
 
 gradfproj :: (View x, Viewable a, CMatrix a) => S a -> S a -> M x (JV Id) a -> M x (JV Id) a
 gradfproj etheta thetamax theta =
-  (2 * (etheta + 1) / (etheta + maxsq)) `scale` theta
+  (2 * (etheta + 1) / (etheta*maxsq)) `scale` theta
   where
-    maxsq = thetamax `dot` thetamax
+    maxsq = thetamax * thetamax
 
 gt :: (Num a, SymOrd a) => a -> a -> a
 gt x y = 1 - (x `leq` y)
@@ -102,17 +102,21 @@ gt x y = 1 - (x `leq` y)
 proj :: forall x a
         . (View x, Viewable a, CMatrix a, SymOrd (M x (JV Id) a))
         => S a -> S a -> M x (JV Id) a -> M x (JV Id) a -> M x (JV Id) a
-proj etheta thetamax theta signal =
-  signal - (1 - aOk) `scale` (ft `scale` (dfty `scale` df))
+proj etheta thetamax theta y =
+  y - correction `scale` (ft `scale` (ndfty `scale` ndf))
   where
-    aOk :: S a
-    aOk = (ft `geq` 0)*(dfty `gt` 0)
+    correction :: S a
+    correction = (ft `geq` 0)*(dfty `gt` 0)
     ft :: S a
     ft = fproj etheta thetamax theta
     df :: M x (JV Id) a
     df = gradfproj etheta thetamax theta
+    ndf :: M x (JV Id) a
+    ndf = (1 / sqrt (df `dot` df)) `scale` df
+    ndfty :: S a
+    ndfty = ndf `dot` y
     dfty :: S a
-    dfty = df `dot` signal
+    dfty = df `dot` y
 
 
 --etheta0 :: Fractional a => a
