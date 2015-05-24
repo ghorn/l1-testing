@@ -349,7 +349,9 @@ integrate f h x0 = devectorize $ sv $ last sol
     f' _ x = vs $ vectorize $ f (devectorize (sv x))
 
 
-integrate' :: Vectorize x => (x Double -> x Double) -> Double -> [Double] -> x Double -> [x Double]
+integrate' :: Vectorize x
+              => (Double -> x Double -> x Double)
+              -> Double -> [Double] -> x Double -> [x Double]
 integrate' f h times x0 = map (devectorize . sv) sol
   where
     vs :: V.Vector Double -> SV.Vector Double
@@ -364,4 +366,4 @@ integrate' f h times x0 = map (devectorize . sv) sol
           (vs (vectorize x0))
           (SV.fromList times)
     f' :: Double -> SV.Vector Double -> SV.Vector Double
-    f' _ x = vs $ vectorize $ f (devectorize (sv x))
+    f' t x = vs $ vectorize $ f t (devectorize (sv x))

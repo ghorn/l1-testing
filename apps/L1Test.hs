@@ -105,22 +105,35 @@ main = do
         , l1sU = 0
         , l1sWqsHat = wqs0
         }
-      reference = 0.0
-
       wqs0 :: WQS RoboX Double
-      wqs0 = fill 1
---      wqs0 = WQS { wqsOmega = 1
---                 , wqsTheta = RoboX 0 0
---                 , wqsSigma = 0
---                 }
+      wqs0 = WQS { wqsOmega = 1
+                 , wqsTheta = fill 0.1 -- todo(mp): breaks when it's zero
+                 , wqsSigma = 0.1      -- todo(mp): breaks when it's zero
+                 }
 
-  let dfdt :: WQS RoboX Double -> Double -> SimStates RoboX Double -> SimStates RoboX Double
-      dfdt wqs r (SimStates x l1) = unsafePerformIO $ do
+  let --dfdt :: WQS RoboX Double -> Double -> SimStates RoboX Double -> SimStates RoboX Double
+      --dfdt wqs r (SimStates x l1) = unsafePerformIO $ do
+      dfdt :: Double -> SimStates RoboX Double -> SimStates RoboX Double
+      dfdt t (SimStates x l1) = unsafePerformIO $ do
         let fss =
               FullSystemState
               { ffsX = x
               , ffsWQS = wqs
               }
+            --wqs = wqs0
+            wqs =
+              WQS
+              { wqsOmega = 1.1 + 0.3*sin(3*t)
+              , wqsTheta =
+                RoboX
+                { xPos = sin (0.5*pi*t) + cos (pi * t)
+                , xVel = -1 + 0.1 * sin (3*pi*t)
+                }
+              , wqsSigma = (cos p) + 2 * sin (pi * t) + cos (7*pi/5*t)
+              }
+            p = xPos x
+            r = cos (2*t/pi)
+            -- r = 0
         l1' <- lol fss l1 r
         let x' = ddtRoboX fss (l1sU l1)
         return (SimStates x' l1')
@@ -130,7 +143,7 @@ main = do
 --      simTimes = [0,0.01..2]
       simTimes = [0,0.001..25]
       sols :: [SimStates RoboX Double]
-      sols = integrate' (dfdt wqs0 reference) 0.01 simTimes (SimStates x0 l0)
+      sols = integrate' dfdt 0.01 simTimes (SimStates x0 l0)
 --  mapM_ print sols
   putStrLn $ unlines $ toMatlab "ret" sols
   putStrLn $ "time = " ++ show simTimes ++ ";"
