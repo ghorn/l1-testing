@@ -1,9 +1,10 @@
 {-# OPTIONS_GHC -Wall #-}
+{-# Language FlexibleContexts #-}
 {-# Language ScopedTypeVariables #-}
 {-# Language DeriveGeneric #-}
 {-# Language DeriveFunctor #-}
 
-module L1.L1Test
+module Main
        ( main
        , RoboX(..)
        , SimStates(..)
@@ -22,6 +23,7 @@ import Casadi.MX ( MX )
 import Dyno.Vectorize
 import Dyno.View.JV
 import Dyno.View.M ( fromHMat )
+import Accessors
 
 import L1.L1
 
@@ -31,6 +33,7 @@ data RoboX a =
   , xVel :: a
   } deriving (Functor, Generic, Generic1, Show)
 instance Vectorize RoboX
+instance Lookup a => Lookup (RoboX a)
 
 --data RoboU a =
 --  RoboU
@@ -64,7 +67,7 @@ l1params =
   , l1pOmegaMax = 10
   , l1pSigmaMax = 10
   , l1pThetaMax = 5
-  , l1pGamma = 100e3
+  , l1pGamma = 10e3
   , l1pKg = 1
   , l1pP = fromHMat $
            HMat.fromLists
@@ -80,6 +83,7 @@ data SimStates x a =
   , ssL1 :: L1States x a
   } deriving (Functor, Generic, Generic1, Show)
 instance Vectorize x => Vectorize (SimStates x)
+instance (Lookup a, Lookup (x a)) => Lookup (SimStates x a)
 
 main :: IO ()
 main = do
@@ -109,6 +113,17 @@ main = do
         (l1', x') <- lol fss l1 r
         return (SimStates x' l1')
 
-      sols = integrate' (dfdt wqs0 reference) 0.01 [0,0.01..0.1] (SimStates x0 l0)
-  mapM_ print sols
+      simTimes = [0,0.01..2]
+      sols :: [SimStates RoboX Double]
+      sols = integrate' (dfdt wqs0 reference) 0.01 simTimes (SimStates x0 l0)
+--  mapM_ print sols
+  putStrLn $ unlines $ toMatlab "ret" sols
+  putStrLn $ "time = " ++ show simTimes ++ ";"
   return ()
+
+
+toMatlab :: (Vectorize f, Lookup (f Double)) => String -> [f Double] -> [String]
+toMatlab topName xs = map (uncurry (fieldToMatlab xs)) at
+  where
+    at = flatten $ accessors (fill 0)
+    fieldToMatlab xzus name get = topName ++ "." ++ name ++ " = " ++ show (map get xzus) ++ ";"

@@ -29,6 +29,8 @@ import Casadi.DMatrix ( DMatrix )
 import Casadi.MX ( MX )
 import Casadi.Overloading ( SymOrd(..) )
 
+import Accessors
+
 import Dyno.Vectorize
 import Dyno.View.M ( M, ms, mm, trans, uncol, col, hsplitTup )
 import Dyno.View.Viewable
@@ -143,6 +145,7 @@ data L1States x a =
   , l1sWqsHat :: WQS x a
   } deriving (Functor, Generic, Generic1, Show)
 instance Vectorize x => Vectorize (L1States x)
+instance (Lookup a, Lookup (x a)) => Lookup (L1States x a)
 
 data WQS x a =
   WQS
@@ -151,6 +154,7 @@ data WQS x a =
   , wqsSigma :: a
   } deriving (Functor, Generic, Generic1, Show)
 instance Vectorize x => Vectorize (WQS x)
+instance (Lookup a, Lookup (x a)) => Lookup (WQS x a)
 
 data FullSystemState x a =
   FullSystemState
