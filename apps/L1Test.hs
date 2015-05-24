@@ -141,7 +141,7 @@ main = do
 --  print $ dfdt wqs0 reference (SimStates x0 l0)
 
 --      simTimes = [0,0.01..2]
-      simTimes = [0,0.001..25]
+      simTimes = [0,0.0002..10]
       sols :: [SimStates RoboX Double]
       sols = integrate' dfdt 0.01 simTimes (SimStates x0 l0)
 --  mapM_ print sols
