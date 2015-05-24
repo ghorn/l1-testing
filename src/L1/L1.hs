@@ -192,7 +192,7 @@ prepareL1 ::
   . (Vectorize x, u ~ Id)
   => (FullSystemState x (J (JV Id) SX) -> J (JV Id) SX -> x (J (JV Id) SX))
   -> L1Params (JV x) MX -- todo(symbolic leak)
-  -> IO (FullSystemState x Double -> L1States x Double -> Double -> IO (L1States x Double, x Double))
+  -> IO (FullSystemState x Double -> L1States x Double -> Double -> IO (L1States x Double))
 prepareL1 userOde l1params = do
   let f :: JacIn (JTuple (JV x) (JV u)) (J (JV (WQS x))) SX -> JacOut (JV x) (J JNone) SX
       f (JacIn xu wqs) = JacOut (catJV' xdot) (cat JNone)
@@ -212,8 +212,8 @@ prepareL1 userOde l1params = do
   sxF <- toSXFun "user ode" f
   userJac <- toFunJac sxF
 
-  let fullOde :: JTuple (FullL1State x) (JV Id) MX -> JTuple (JV (L1States x)) (JV x) MX
-      fullOde (JTuple fullL1States r) = JTuple l1dot x'
+  let fullOde :: JTuple (FullL1State x) (JV Id) MX -> J (JV (L1States x)) MX
+      fullOde (JTuple fullL1States r) = l1dot
         where
           l1dot = ddtL1States l1params dx'dx dx'du (col r) (col xestimate) (catJV' controllerState')
 
@@ -227,8 +227,7 @@ prepareL1 userOde l1params = do
           jacIn = JacIn (cat (JTuple (catJV' xhat) (catJV' (Id u))))
                         (catJV' wqsHat)
           dx'dxu :: M (JV x) (JTuple (JV x) (JV u)) MX
-          x' :: J (JV x) MX
-          Jac dx'dxu x' _ = call userJac jacIn
+          Jac dx'dxu _ _ = call userJac jacIn
 
           dx'dx :: M (JV x) (JV x) MX
           dx'du :: M (JV x) (JV u) MX
@@ -239,7 +238,7 @@ prepareL1 userOde l1params = do
   fullOdeMX <- toMXFun "full ode with l1" fullOde
 
   let retFun :: FullSystemState x Double -> L1States x Double -> Double
-                -> IO (L1States x Double, x Double)
+                -> IO (L1States x Double)
       retFun ffs l1States r = do
         let fullL1States :: FullL1State x DMatrix
             fullL1States =
@@ -248,8 +247,8 @@ prepareL1 userOde l1params = do
               , systemState = v2d $ catJV ffs
               }
             input = JTuple (cat fullL1States) (v2d (catJV (Id r)))
-        JTuple ret x' <- eval fullOdeMX input
-        return (splitJV (d2v ret), splitJV (d2v x'))
+        ret <- eval fullOdeMX input
+        return (splitJV (d2v ret))
 
   return retFun
 

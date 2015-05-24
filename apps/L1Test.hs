@@ -121,7 +121,7 @@ main = do
               { ffsX = x
               , ffsWQS = wqs
               }
-        (l1', _x') <- lol fss l1 r
+        l1' <- lol fss l1 r
         let x' = ddtRoboX fss (l1sU l1)
         return (SimStates x' l1')
 
