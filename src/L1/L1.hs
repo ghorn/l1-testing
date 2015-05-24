@@ -127,10 +127,6 @@ proj etheta thetamax theta y =
 Low-pass filter
 
 -}
-dstep :: (CMatrix a, Viewable a) => S a -> S a -> S a -> S a
-dstep w u y = ydot
-  where
-    ydot = w * (u - y)
 
 scale :: (Viewable a, CMatrix a, View f, View g) => S a -> M f g a -> M f g a
 scale s m = m `ms` (uncol s)
@@ -323,7 +319,7 @@ ddtL1States L1Params{..} am b r x l1states =
     e = l1pKg * r - eta
 
     udot :: S a
-    udot = dstep l1pW e u
+    udot = l1pW * (l1pK * e - u)
 
 integrate :: Vectorize x => (x Double -> x Double) -> Double -> x Double -> x Double
 integrate f h x0 = devectorize $ sv $ last sol
