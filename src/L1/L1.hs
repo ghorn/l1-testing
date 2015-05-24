@@ -178,6 +178,7 @@ data L1Params x a =
   , l1pThetaMax :: S a
   , l1pGamma :: S a
   , l1pKg :: S a
+  , l1pK :: S a
   , l1pP :: M x x a
   , l1pW :: S a
   } deriving Functor

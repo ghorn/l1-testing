@@ -69,6 +69,7 @@ l1params =
   , l1pThetaMax = 5
   , l1pGamma = 10e3
   , l1pKg = 1
+  , l1pK = 60
   , l1pP = fromHMat $
            HMat.fromLists
            [ [0.812564928052004, -0.359997120023040]
