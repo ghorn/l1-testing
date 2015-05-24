@@ -329,7 +329,8 @@ ddtL1States L1Params{..} am b r xestimate l1states =
     e = l1pKg * r - eta
 
     udot :: S a
-    udot = l1pW * (l1pK * e - u)
+    udot = l1pK * e
+--    udot = l1pW * (l1pK * e - u)
 
 integrate :: Vectorize x => (x Double -> x Double) -> Double -> x Double -> x Double
 integrate f h x0 = devectorize $ sv $ last sol
