@@ -18,30 +18,16 @@ module L1.L1
 
 import GHC.Generics ( Generic, Generic1 )
 
+import qualified Data.Foldable as F
+import Linear
 import qualified Numeric.GSL.ODE as ODE
 import qualified Numeric.LinearAlgebra.Data as D
 import qualified Data.Vector as V
 import qualified Data.Vector.Storable as SV
-import qualified Numeric.LinearAlgebra.HMatrix as HMat
 
-import Casadi.CMatrix ( CMatrix )
-import Casadi.SX ( SX )
-import Casadi.DMatrix ( DMatrix )
-import Casadi.MX ( MX )
 import Casadi.Overloading ( SymOrd(..) )
-
 import Accessors
-
 import Dyno.Vectorize
-import Dyno.View.M ( M, ms, mm, trans, uncol, col, hsplitTup, fromHMat )
-import Dyno.View.Viewable
-import Dyno.View.JV
-import Dyno.View.Fun
-import Dyno.View.FunJac
-import Dyno.View.View
-
-dot :: (View f, CMatrix a) => M f (JV Id) a -> M f (JV Id) a -> M (JV Id) (JV Id) a
-dot x y = trans x `mm` y
 
 {-
 
@@ -81,15 +67,15 @@ estimates; it does keep them in the valid range, but this operator
 needs to be smooth for the Lyapunov proofs.
 
 -}
-fproj :: (View x, Viewable a, CMatrix a) => S a -> S a -> M x (JV Id) a -> S a
+fproj :: (Metric x, Fractional a) => a -> a -> x a -> a
 fproj etheta thetamax theta =
   ((etheta + 1) * theta `dot` theta - maxsq) / (etheta * maxsq)
   where
     maxsq = thetamax * thetamax
 
-gradfproj :: (View x, Viewable a, CMatrix a) => S a -> S a -> M x (JV Id) a -> M x (JV Id) a
+gradfproj :: (Functor x, Fractional a) => a -> a -> x a -> x a
 gradfproj etheta thetamax theta =
-  (2 * (etheta + 1) / (etheta*maxsq)) `scale` theta
+  (2 * (etheta + 1) / (etheta*maxsq)) *^ theta
   where
     maxsq = thetamax * thetamax
 
@@ -101,22 +87,21 @@ gt x y = 1 - (x `leq` y)
 --lt x y = 1 - (x `geq` y)
 
 proj :: forall x a
-        . (View x, Viewable a, CMatrix a, SymOrd (M x (JV Id) a))
-        => S a -> S a -> M x (JV Id) a -> M x (JV Id) a -> M x (JV Id) a
+        . (Metric x, Floating a, SymOrd a) => a -> a -> x a -> x a -> x a
 proj etheta thetamax theta y =
-  y - correction `scale` (ft `scale` (ndfty `scale` ndf))
+  y ^-^ correction *^ (ft *^ (ndfty *^ ndf))
   where
-    correction :: S a
+    correction :: a
     correction = (ft `geq` 0)*(dfty `gt` 0)
-    ft :: S a
+    ft :: a
     ft = fproj etheta thetamax theta
-    df :: M x (JV Id) a
+    df :: x a
     df = gradfproj etheta thetamax theta
-    ndf :: M x (JV Id) a
-    ndf = (1 / sqrt (df `dot` df)) `scale` df
-    ndfty :: S a
+    ndf :: x a
+    ndf = (1 / sqrt (df `dot` df)) *^ df
+    ndfty :: a
     ndfty = ndf `dot` y
-    dfty :: S a
+    dfty :: a
     dfty = df `dot` y
 
 
@@ -128,9 +113,6 @@ proj etheta thetamax theta y =
 Low-pass filter
 
 -}
-
-scale :: (Viewable a, CMatrix a, View f, View g) => S a -> M f g a -> M f g a
-scale s m = m `ms` (uncol s)
 
 {-
 
@@ -166,169 +148,116 @@ instance Vectorize x => Vectorize (FullSystemState x)
 
 data FullL1State x a =
   FullL1State
-  { controllerState :: J (JV (L1States x)) a
-  , systemState :: J (JV (FullSystemState x)) a
-  } deriving (Generic, Generic1)
-instance Vectorize x => View (FullL1State x)
+  { controllerState :: L1States x a
+  , systemState :: FullSystemState x a
+  } deriving (Functor, Generic, Generic1)
+instance Vectorize x => Vectorize (FullL1State x)
 
 data L1Params x a =
   L1Params
-  { l1pETheta0 :: S a
-  , l1pOmegaBounds :: (S a, S a)
-  , l1pSigmaBounds :: (S a, S a)
-  , l1pThetaBounds :: (M x (JV Id) a, S a)
-  , l1pGamma :: S a
-  , l1pKg :: S a
-  , l1pK :: S a
-  , l1pP :: M x x a
-  , l1pW :: S a
+  { l1pETheta0 :: a
+  , l1pOmegaBounds :: (a, a)
+  , l1pSigmaBounds :: (a, a)
+  , l1pThetaBounds :: (x a, a)
+  , l1pGamma :: a
+  , l1pKg :: a
+  , l1pK :: a
+  , l1pP :: x (x a)
+  , l1pW :: a
   } deriving Functor
 
 
-type S a = M (JV Id) (JV Id) a
-
 prepareL1 ::
-  forall x u
-  . (Vectorize x, u ~ Id)
-  => (FullSystemState x (J (JV Id) SX) -> J (JV Id) SX -> x (J (JV Id) SX))
-  -> L1Params (JV x) MX -- todo(symbolic leak)
-  -> IO (FullSystemState x Double -> L1States x Double -> Double -> IO (L1States x Double))
-prepareL1 userOde l1params = do
-  let f :: JacIn (JTuple (JV x) (JV u)) (J (JV (WQS x))) SX -> JacOut (JV x) (J JNone) SX
-      f (JacIn xu wqs) = JacOut (catJV' xdot) (cat JNone)
-        where
-          xdot :: x (J (JV Id) SX)
-          xdot = userOde ffs u
+  forall x u a
+  . (Metric x, F.Foldable x, u ~ Id, Floating a, SymOrd a)
+  => L1Params x a
+  -> x (x a) -- dx/dx
+  -> x a     -- dx/du
+  -> FullSystemState x a -> L1States x a -> a -> L1States x a
+prepareL1 l1params dxdx dxdu = retFun
+  where
+    retFun :: FullSystemState x a -> L1States x a -> a -> L1States x a
+    retFun ffs l1States r =
+      fullOde FullL1State { controllerState = l1States, systemState = ffs } r
 
-          ffs :: FullSystemState x (J (JV Id) SX)
-          ffs =
-            FullSystemState
-            { ffsX = splitJV' x
-            , ffsWQS = splitJV' wqs
-            }
-
-          JTuple x u = split xu
-
-  sxF <- toSXFun "user ode" f
-  userJac <- toFunJac sxF
-
-  let fullOde :: JTuple (FullL1State x) (JV Id) MX -> J (JV (L1States x)) MX
-      fullOde (JTuple fullL1States r) = l1dot
-        where
-          l1dot = ddtL1States l1params dx'dx dx'du (col r) (col xestimate) (catJV' controllerState')
-
-          FullL1State controllerState'' systemState'' = split fullL1States
-          controllerState'@(L1States xhat u wqsHat) = splitJV' controllerState''
-          systemState' = splitJV' systemState''
-
-          xestimate = catJV' (ffsX systemState')
-          
-          --jacIn :: JacIn (JTuple f0 (JV Id)) (WQS x) (J (JV Id) MX)
-          jacIn = JacIn (cat (JTuple (catJV' xhat) (catJV' (Id u))))
-                        (catJV' wqsHat)
-          dx'dxu :: M (JV x) (JTuple (JV x) (JV u)) MX
-          Jac dx'dxu _ _ = call userJac jacIn
-
-          dx'dx :: M (JV x) (JV x) MX
-          dx'du :: M (JV x) (JV u) MX
-          dx'dx = fromHMat $ HMat.fromLists [[0, 1], [-1, -1.4]]
-          dx'du = fromHMat $ HMat.fromLists [[0], [1]]
-          --(dx'dx, dx'du) = hsplitTup dx'dxu
-
-  fullOdeMX <- toMXFun "full ode with l1" fullOde
-
-  let retFun :: FullSystemState x Double -> L1States x Double -> Double
-                -> IO (L1States x Double)
-      retFun ffs l1States r = do
-        let fullL1States :: FullL1State x DMatrix
-            fullL1States =
-              FullL1State
-              { controllerState = v2d $ catJV l1States
-              , systemState = v2d $ catJV ffs
-              }
-            input = JTuple (cat fullL1States) (v2d (catJV (Id r)))
-        ret <- eval fullOdeMX input
-        return (splitJV (d2v ret))
-
-  return retFun
+    fullOde :: FullL1State x a -> a -> L1States x a
+    fullOde (FullL1State controllerState systemState) r =
+      ddtL1States l1params dxdx dxdu r (ffsX systemState) controllerState
 
 
 ddtL1States ::
   forall a x
-  . (Vectorize x, Viewable a, CMatrix a)
-  => L1Params (JV x) a
-  -> M (JV x) (JV x) a -- am
-  -> M (JV x) (JV Id) a -- b
-  -> S a
-  -> M (JV x) (JV Id) a
-  -> J (JV (L1States x)) a -> J (JV (L1States x)) a
+  . (Additive x, F.Foldable x, Metric x, Floating a, SymOrd a)
+  => L1Params x a
+  -> x (x a) -- am
+  -> x a -- b
+  -> a
+  -> x a
+  -> L1States x a -> L1States x a
 ddtL1States L1Params{..} am b r xestimate l1states =
-  catJV' $ L1States (splitJV' (uncol xhatdot)) (unId (splitJV' (uncol udot))) wqsDot
+  L1States xhatdot udot wqsDot
   where
-    L1States xhat0 u0 wqsHat' = splitJV' l1states
+    wqsHat :: WQS x a
+    L1States xhat u wqsHat = l1states
 
-    xhat :: M (JV x) (JV Id) a
-    xhat = col (catJV' xhat0)
-
-    u :: M (JV Id) (JV Id) a
-    u = col u0
-
-    wqsDot :: WQS x (J (JV Id) a)
+    wqsDot :: WQS x a
     wqsDot =
       WQS
-      { wqsOmega = unId $ splitJV' (uncol omegahatdot)
-      , wqsTheta =        splitJV' (uncol thetahatdot)
-      , wqsSigma = unId $ splitJV' (uncol sigmahatdot)
+      { wqsOmega = omegahatdot
+      , wqsTheta = thetahatdot
+      , wqsSigma = sigmahatdot
       }
 
-    wqsHat :: WQS x (J (JV Id) a)
-    wqsHat = wqsHat'
-    omegahat :: M (JV Id) (JV Id) a
-    omegahat = col (catJV' (Id (wqsOmega wqsHat)))
-    thetahat :: M (JV x) (JV Id) a
-    thetahat = col (catJV' (wqsTheta wqsHat))
-    sigmahat :: M (JV Id) (JV Id) a
-    sigmahat = col (catJV' (Id (wqsSigma wqsHat)))
+    omegahat :: a
+    omegahat = wqsOmega wqsHat
+    thetahat :: x a
+    thetahat = wqsTheta wqsHat
+    sigmahat :: a
+    sigmahat = wqsSigma wqsHat
 
     -- Compute error between reference model and true state
-    xtilde :: M (JV x) (JV Id) a
-    xtilde = xhat - xestimate
+    xtilde :: x a
+    xtilde = xhat ^-^ xestimate
     -- Update parameter estimates.  The estimate derivatives we
     -- compute here will be used to form the next step's estimates; we
     -- use the values we receive as arguments for everything at this
     -- step.
-    xtpbg :: S a
-    xtpbg = l1pGamma `scale` ((-(trans xtilde)) `mm` l1pP `mm` b)
+    xtpbg :: a
+    xtpbg = - l1pGamma * (xtilde `dot` (l1pP !* b))
 
-    gp :: View f => (M f (JV Id) a, S a)-> M f (JV Id) a -> M f (JV Id) a -> M f (JV Id) a
+    gp :: (Additive f, Metric f) => (f a, a)-> f a -> f a -> f a
     gp (scenter, snorm) th sig = unshift ret0
       where
         ret0 = proj l1pETheta0 snorm (shift th) (shift sig)
 
-        shift z   = z - scenter
-        unshift z = z + scenter
+        shift z   = z ^-^ scenter
+        unshift z = z ^+^ scenter
+
+    -- same as gp but for scalars, wrap with Id and call gp
+    gp' :: (a, a)-> a -> a -> a
+    gp' (scenter, snorm) th sig = unId $ gp (Id scenter, snorm) (Id th) (Id sig)
 
 
-    omegahatdot,sigmahatdot :: S a
-    omegahatdot = gp l1pOmegaBounds omegahat (xtpbg `scale` u)
-    sigmahatdot = gp l1pSigmaBounds sigmahat xtpbg
-    thetahatdot :: M (JV x) (JV Id) a
-    thetahatdot = gp l1pThetaBounds thetahat (xtpbg `scale` xestimate)
+    omegahatdot,sigmahatdot :: a
+    omegahatdot = gp' l1pOmegaBounds omegahat (xtpbg * u)
+    sigmahatdot = gp' l1pSigmaBounds sigmahat xtpbg
+    thetahatdot :: x a
+    thetahatdot = gp l1pThetaBounds thetahat (xtpbg *^ xestimate)
     -- Update reference model state using the previous values.  The
     -- 'xhat' value we receive should be the model's prediction (using
     -- the previous xhat and xhatdot) for the true state 'x' at this
     -- timestep.
 
-    eta :: S a
+    eta :: a
     eta = omegahat * u + thetahat `dot` xestimate + sigmahat
 
-    xhatdot :: M (JV x) (JV Id) a
-    xhatdot = am `mm` xhat + eta `scale` b
+    xhatdot :: x a
+    xhatdot = am !* xhat ^+^ eta *^ b
     -- Update the reference LPF state
-    e :: S a
+    e :: a
     e = l1pKg * r - eta
 
-    udot :: S a
+    udot :: a
     udot = l1pK * e
 --    udot = l1pW * (l1pK * e - u)
 

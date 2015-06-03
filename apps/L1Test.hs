@@ -13,16 +13,9 @@ module Main
 
 import GHC.Generics ( Generic, Generic1 )
 
-import System.IO.Unsafe ( unsafePerformIO )
-
-import qualified Numeric.LinearAlgebra.HMatrix as HMat
 import Linear
 
---import Casadi.DMatrix ( DMatrix )
-import Casadi.MX ( MX )
 import Dyno.Vectorize
-import Dyno.View.JV
-import Dyno.View.M ( fromHMat )
 import Accessors
 
 import L1.L1
@@ -63,24 +56,18 @@ ddtRoboX (FullSystemState x@(RoboX p v) (WQS omegaBar theta sigmaBar)) u  =
 fromBounds :: Fractional a => a -> a -> (a, a)
 fromBounds lb ub = (0.5 * (lb + ub), 0.5*(ub - lb))
 
-l1params :: L1Params (JV RoboX) MX
+l1params :: L1Params RoboX Double
 l1params =
   L1Params
   { l1pETheta0 = 0.1
   , l1pOmegaBounds = fromBounds 0.1 2
   , l1pSigmaBounds = fromBounds (-50) 50
-  , l1pThetaBounds = (0, 5)
+  , l1pThetaBounds = (RoboX 0 0, 5)
   , l1pGamma = 100e3
   , l1pKg = 1
   , l1pK = 60
-  , l1pP = fromHMat $
-           HMat.fromLists
---           [ [0.812564928052004, -0.359997120023040]
---           , [-0.359997120023040, 0.308568960019748]
---           ]
-           [ [1.41429,   0.50000]
-           , [ 0.50000,   0.7142]
-           ]
+  , l1pP = RoboX (RoboX 1.41429 0.50000)
+                 (RoboX 0.50000 0.7142)
   , l1pW = 1
   }
 
@@ -94,8 +81,11 @@ instance (Lookup a, Lookup (x a)) => Lookup (SimStates x a)
 
 main :: IO ()
 main = do
-  lol <- prepareL1 ddtRoboX l1params
-  let x0 :: RoboX Double
+  let dxdx = RoboX (RoboX 0 1)
+                   (RoboX (-1) (-1.4))
+      dxdu = RoboX 0 1
+      lol = prepareL1 l1params dxdx dxdu
+      x0 :: RoboX Double
       x0 = RoboX 0 0
 
       l0 :: L1States RoboX Double
@@ -111,32 +101,32 @@ main = do
                  , wqsSigma = 0.1      -- todo(mp): breaks when it's zero
                  }
 
-  let --dfdt :: WQS RoboX Double -> Double -> SimStates RoboX Double -> SimStates RoboX Double
+      --dfdt :: WQS RoboX Double -> Double -> SimStates RoboX Double -> SimStates RoboX Double
       --dfdt wqs r (SimStates x l1) = unsafePerformIO $ do
       dfdt :: Double -> SimStates RoboX Double -> SimStates RoboX Double
-      dfdt t (SimStates x l1) = unsafePerformIO $ do
-        let fss =
-              FullSystemState
-              { ffsX = x
-              , ffsWQS = wqs
+      dfdt t (SimStates x l1) = SimStates x' l1'
+        where
+          fss =
+            FullSystemState
+            { ffsX = x
+            , ffsWQS = wqs
+            }
+          --wqs = wqs0
+          wqs =
+            WQS
+            { wqsOmega = 1.1 + 0.3*sin(3*t)
+            , wqsTheta =
+              RoboX
+              { xPos = sin (0.5*pi*t) + cos (pi * t)
+              , xVel = -1 + 0.1 * sin (3*pi*t)
               }
-            --wqs = wqs0
-            wqs =
-              WQS
-              { wqsOmega = 1.1 + 0.3*sin(3*t)
-              , wqsTheta =
-                RoboX
-                { xPos = sin (0.5*pi*t) + cos (pi * t)
-                , xVel = -1 + 0.1 * sin (3*pi*t)
-                }
-              , wqsSigma = (cos p) + 2 * sin (pi * t) + cos (7*pi/5*t)
-              }
-            p = xPos x
-            r = cos (2*t/pi)
-            -- r = 0
-        l1' <- lol fss l1 r
-        let x' = ddtRoboX fss (l1sU l1)
-        return (SimStates x' l1')
+            , wqsSigma = (cos p) + 2 * sin (pi * t) + cos (7*pi/5*t)
+            }
+          p = xPos x
+          r = cos (2*t/pi)
+          -- r = 0
+          l1' = lol fss l1 r
+          x' = ddtRoboX fss (l1sU l1)
 
 --  print $ dfdt wqs0 reference (SimStates x0 l0)
 
