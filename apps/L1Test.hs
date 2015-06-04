@@ -92,15 +92,14 @@ main = do
       l0 :: L1States RoboX Double
       l0 =
         L1States
-        { l1sXhat = RoboX (0.4) (0.5)
+        { l1sXhat = RoboX (0.2) (0.1)
         , l1sU = 0
-        , l1sWqsHat = wqs0
+        , l1sWqsHat = WQS {
+            wqsOmega = 0.2
+          , wqsTheta = fill (-0.5)
+          , wqsSigma = -3.3
+          }
         }
-      wqs0 :: WQS RoboX Double
-      wqs0 = WQS { wqsOmega = 0.2
-                 , wqsTheta = fill (-0.5) -- todo(mp): breaks when it's zero
-                 , wqsSigma = -3.3      -- todo(mp): breaks when it's zero
-                 }
 
       --dfdt :: WQS RoboX Double -> Double -> SimStates RoboX Double -> SimStates RoboX Double
       --dfdt wqs r (SimStates x l1) = unsafePerformIO $ do
@@ -115,13 +114,16 @@ main = do
           --wqs = wqs0
           wqs =
             WQS
-            { wqsOmega = 1.1 + 0.3*sin(3*t)
+            { wqsOmega = 1.8 + 0.5*sin(3*t)
+            -- todo(mp): breaks when it's zero
             , wqsTheta =
               RoboX
-              { xPos = sin (0.5*pi*t) + cos (pi * t)
-              , xVel = -1 + 0.1 * sin (3*pi*t)
+              { xPos = 0.3 + sin (0.7*pi*t) + cos (3.4 * pi * t)
+              , xVel = -4.8 + 0.4 * sin (2.8*pi*t)
               }
-            , wqsSigma = (cos p) + 2 * sin (pi * t) + cos (7*pi/5*t)
+            -- todo(mp): breaks when it's zero
+            , wqsSigma = 2 * (cos p) + 5 * sin (0.85 * pi * t) + cos (7.7*pi/5*t) +
+                         2 * cos (5.1 * pi / 3.3 * t) + 3 * sin (1.4 * pi / 1.3 * t)
             }
           p = xPos x
           r = reference t
