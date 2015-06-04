@@ -86,19 +86,19 @@ main = do
       dxdu = RoboX 0 1
       lol = prepareL1 l1params dxdx dxdu
       x0 :: RoboX Double
-      x0 = RoboX 0 0
+      x0 = RoboX (-0.2) (-0.3)
 
       l0 :: L1States RoboX Double
       l0 =
         L1States
-        { l1sXhat = x0
+        { l1sXhat = RoboX (0.4) (0.5)
         , l1sU = 0
         , l1sWqsHat = wqs0
         }
       wqs0 :: WQS RoboX Double
-      wqs0 = WQS { wqsOmega = 1
-                 , wqsTheta = fill 0.1 -- todo(mp): breaks when it's zero
-                 , wqsSigma = 0.1      -- todo(mp): breaks when it's zero
+      wqs0 = WQS { wqsOmega = 0.2
+                 , wqsTheta = fill (-0.5) -- todo(mp): breaks when it's zero
+                 , wqsSigma = -3.3      -- todo(mp): breaks when it's zero
                  }
 
       --dfdt :: WQS RoboX Double -> Double -> SimStates RoboX Double -> SimStates RoboX Double
