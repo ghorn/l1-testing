@@ -81,7 +81,8 @@ instance (Lookup a, Lookup (x a)) => Lookup (SimStates x a)
 
 main :: IO ()
 main = do
-  let dxdx = RoboX (RoboX 0 1)
+  let reference t = cos (2 * t / pi) + pi
+      dxdx = RoboX (RoboX 0 1)
                    (RoboX (-1) (-1.4))
       dxdu = RoboX 0 1
       lol = prepareL1 l1params dxdx dxdu
@@ -123,8 +124,7 @@ main = do
             , wqsSigma = (cos p) + 2 * sin (pi * t) + cos (7*pi/5*t)
             }
           p = xPos x
-          r = cos (2*t/pi)
-          -- r = 0
+          r = reference t
           l1' = lol fss l1 r
           x' = ddtRoboX fss (l1sU l1)
 
@@ -132,10 +132,12 @@ main = do
 
 --      simTimes = [0,0.01..2]
       simTimes = [0,0.0002..10]
+      refs = map reference simTimes
       sols :: [SimStates RoboX Double]
       sols = integrate' dfdt 0.01 simTimes (SimStates x0 l0)
 --  mapM_ print sols
-  putStrLn $ unlines $ toMatlab "ret" sols
+  putStrLn $ unlines $
+    toMatlab "ret" sols ++ [" r = [" ++ unwords (map show refs) ++ "];"]
   putStrLn $ "time = " ++ show simTimes ++ ";"
   return ()
 
