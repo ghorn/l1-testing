@@ -131,7 +131,7 @@ main = do
           l1' = lol fss l1 r
           x' = ddtRoboX fss (l1sU l1)
 
-      simTimes = [0,0.0002..10]
+      simTimes = [0,0.0002..25]
       refs = map reference simTimes
       sols :: [SimStates RoboX RoboX Double]
       sols = integrate' dfdt 0.01 simTimes (SimStates x0 l0)
