@@ -12,7 +12,6 @@ module L1.L1
        , L1Params(..)
        , WQS(..)
        , prepareL1
-       , integrate
        , integrate'
        ) where
 
@@ -51,9 +50,6 @@ sigmahatdot = Gamma Proj(sigmahat, -xtilde^T P b)
 u = -k D (etahat - kg r)
 
 p-}
-
---rscale :: Container c e
---rscale = flip scale
 
 {-
 
@@ -103,23 +99,6 @@ proj etheta thetamax theta y =
     ndfty = ndf `dot` y
     dfty :: a
     dfty = df `dot` y
-
-
---etheta0 :: Fractional a => a
---etheta0 = 0.1
-
-{-
-
-Low-pass filter
-
--}
-
-{-
-
-Discrete L1 controller step
-
--}
-
 
 data L1States d x a =
   L1States
@@ -267,24 +246,6 @@ ddtL1States L1Params{..} am b r xestimate l1states =
 
     udot :: a
     udot = l1pDC `dot` d
-
-integrate :: Vectorize x => (x Double -> x Double) -> Double -> x Double -> x Double
-integrate f h x0 = devectorize $ sv $ last sol
-  where
-    vs :: V.Vector Double -> SV.Vector Double
-    vs = SV.fromList .  V.toList
-    sv :: SV.Vector Double -> V.Vector Double
-    sv =  V.fromList . SV.toList
-
-    sol = D.toRows $
-          ODE.odeSolveV
-          ODE.MSAdams
-          h 1e-7 1e-5 f'
-          (vs (vectorize x0))
-          (SV.fromList [0, h])
-    f' :: Double -> SV.Vector Double -> SV.Vector Double
-    f' _ x = vs $ vectorize $ f (devectorize (sv x))
-
 
 integrate' :: Vectorize x
               => (Double -> x Double -> x Double)
