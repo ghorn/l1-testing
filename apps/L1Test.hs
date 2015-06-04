@@ -28,22 +28,8 @@ data RoboX a =
 instance Vectorize RoboX
 instance Lookup a => Lookup (RoboX a)
 
---data RoboU a =
---  RoboU
---  { uTorque :: a
---  } deriving (Functor, Generic, Generic1)
---instance Vectorize RoboU
-
---data RoboTheta a =
---  RoboTheta
---  { qF1 :: a
---  , qF2 :: a
---  } deriving (Functor, Generic, Generic1)
---instance Vectorize RoboTheta
-
 ddtRoboX :: Floating a => FullSystemState RoboX a -> a -> RoboX a
 ddtRoboX (FullSystemState x@(RoboX p v) (WQS omegaBar theta sigmaBar)) u  =
---ddtRoboX x@(RoboX p v) u theta sigmaBar omegaBar =
   RoboX
   { xPos = v
   , xVel = (u + m*g*armLen*(cos p)/2 + sigmaBar + x `dot` theta) * omegaBar
@@ -101,8 +87,6 @@ main = do
           }
         }
 
-      --dfdt :: WQS RoboX Double -> Double -> SimStates RoboX Double -> SimStates RoboX Double
-      --dfdt wqs r (SimStates x l1) = unsafePerformIO $ do
       dfdt :: Double -> SimStates RoboX Double -> SimStates RoboX Double
       dfdt t (SimStates x l1) = SimStates x' l1'
         where
@@ -111,7 +95,6 @@ main = do
             { ffsX = x
             , ffsWQS = wqs
             }
-          --wqs = wqs0
           wqs =
             WQS
             { wqsOmega = 1.8 + 0.5*sin(3*t)
@@ -130,14 +113,10 @@ main = do
           l1' = lol fss l1 r
           x' = ddtRoboX fss (l1sU l1)
 
---  print $ dfdt wqs0 reference (SimStates x0 l0)
-
---      simTimes = [0,0.01..2]
       simTimes = [0,0.0002..10]
       refs = map reference simTimes
       sols :: [SimStates RoboX Double]
       sols = integrate' dfdt 0.01 simTimes (SimStates x0 l0)
---  mapM_ print sols
   putStrLn $ unlines $
     toMatlab "ret" sols ++ [" r = [" ++ unwords (map show refs) ++ "];"]
   putStrLn $ "time = " ++ show simTimes ++ ";"
