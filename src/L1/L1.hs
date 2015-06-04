@@ -30,13 +30,10 @@ import Dyno.Vectorize
 
 {-
 
-Basic equations
+Basic equations -- chapter 2.2 of the L1 textbook.
 
 xdot = Am x + b (mu + theta^T x + sigma0)
 y = c^T x
-
-mu = F u
-
 
 etahat = omegahat u + thetahat^T x + sigmahat
 
@@ -49,18 +46,23 @@ sigmahatdot = Gamma Proj(sigmahat, -xtilde^T P b)
 
 u = -k D (etahat - kg r)
 
-p-}
+-}
 
 {-
 
 The Proj(theta, err) operator.
 
-Pages 291-294 describe this projection operator.  For a long time I
-was confused by the "Gamma Proj(theta, err)" notation, and I
-thought the Gamma belonged inside the projection operator.  It
-turns out it's not quite just hard-bounding the parameter
-estimates; it does keep them in the valid range, but this operator
-needs to be smooth for the Lyapunov proofs.
+Pages 291-294 of the L1 textbook describe this projection operator.
+Note that the L1 publications always use the notation "Gamma
+Proj(theta, err)", but this is incorrect and misleading -- the
+gradient descent rate has to be applied before the nonlinear operator,
+because not only does it mean something different due to the
+nonlinearity, the Proj() operator will not correctly bound the
+estimates if this gain is applied afterwards.
+
+We discovered this by digging into Hovakimyan's example code; before
+that, we were unwilling to implement anything other than what she
+consistently writes in the papers.
 
 -}
 fproj :: (Metric x, Fractional a) => a -> a -> x a -> a
@@ -102,10 +104,10 @@ proj etheta thetamax theta y =
 
 data L1States d x a =
   L1States
-  { l1sXhat :: x a
-  , l1sU :: a
-  , l1sD :: d a
-  , l1sWqsHat :: WQS x a
+  { l1sXhat :: x a  -- ^ Reference model (state predictor) state vector
+  , l1sU :: a       -- ^ Plant input @u@
+  , l1sD :: d a     -- ^ Internal state vector for input low-pass D
+  , l1sWqsHat :: WQS x a  -- ^ Parameter estimate states
   } deriving (Functor, Generic, Generic1, Show)
 instance (Vectorize d, Vectorize x) => Vectorize (L1States d x)
 instance (Lookup a, Lookup (d a), Lookup (x a)) => Lookup (L1States d x a)
@@ -135,18 +137,20 @@ instance (Vectorize d, Vectorize x) => Vectorize (FullL1State d x)
 
 data L1Params d x a =
   L1Params
-  { l1pETheta0 :: a
-  , l1pOmegaBounds :: (a, a)
-  , l1pSigmaBounds :: (a, a)
-  , l1pThetaBounds :: (x a, a)
-  , l1pGamma :: a
-  , l1pKg :: a
-  , l1pK :: a
-  , l1pDA :: d (d a)
-  , l1pDB :: d a
-  , l1pDC :: d a
-  , l1pP :: x (x a)
-  , l1pKsp :: x (x a)
+  { l1pETheta0 :: a  -- ^ Projection operator transition region size
+                     -- (~inverse of smoothness)
+  , l1pOmegaBounds :: (a, a)  -- ^ Bounds on input gain estimate (center, delta)
+  , l1pSigmaBounds :: (a, a)  -- ^ Bounds on direct torque disturbance estimate (center, delta)
+  , l1pThetaBounds :: (x a, a)  -- ^ Bounds on state coefficient estimate vector (center, norm)
+  , l1pGamma :: a  -- ^ Adaptive gain; adaptive loop poles are at roughly @sqrt l1pGamma@
+  , l1pKg :: a     -- ^ Feedforward gain on input
+  , l1pK :: a      -- ^ Bandwidth for input low-pass filter outer loop
+  , l1pDA :: d (d a)  -- ^ Input low-pass filter D -- A matrix
+  , l1pDB :: d a      -- ^ Input low-pass filter D -- B matrix
+  , l1pDC :: d a      -- ^ Input low-pass filter D -- C matrix
+  , l1pP :: x (x a)   -- ^ Gradient-descent direction (see textbook)
+  , l1pKsp :: x (x a)    -- ^ Pole-placement ("loop shaping") matrix
+                         -- for the state predictor
   } deriving Functor
 
 
@@ -212,6 +216,9 @@ ddtL1States L1Params{..} am b r xestimate l1states =
     gp :: (Additive f, Metric f) => (f a, a)-> f a -> f a -> f a
     gp (scenter, snorm) th sig = unshift ret0
       where
+        -- The projection operator is defined around 0.  To get
+        -- arbitrary parameter boundaries, we have to apply a
+        -- coordinate shift before projecting.
         ret0 = proj l1pETheta0 snorm (shift th) (shift sig)
 
         shift z   = z ^-^ scenter
