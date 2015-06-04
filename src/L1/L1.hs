@@ -121,14 +121,15 @@ Discrete L1 controller step
 -}
 
 
-data L1States x a =
+data L1States d x a =
   L1States
   { l1sXhat :: x a
   , l1sU :: a
+  , l1sD :: d a
   , l1sWqsHat :: WQS x a
   } deriving (Functor, Generic, Generic1, Show)
-instance Vectorize x => Vectorize (L1States x)
-instance (Lookup a, Lookup (x a)) => Lookup (L1States x a)
+instance (Vectorize d, Vectorize x) => Vectorize (L1States d x)
+instance (Lookup a, Lookup (d a), Lookup (x a)) => Lookup (L1States d x a)
 
 data WQS x a =
   WQS
@@ -146,14 +147,14 @@ data FullSystemState x a =
   } deriving (Functor, Generic, Generic1)
 instance Vectorize x => Vectorize (FullSystemState x)
 
-data FullL1State x a =
+data FullL1State d x a =
   FullL1State
-  { controllerState :: L1States x a
+  { controllerState :: L1States d x a
   , systemState :: FullSystemState x a
   } deriving (Functor, Generic, Generic1)
-instance Vectorize x => Vectorize (FullL1State x)
+instance (Vectorize d, Vectorize x) => Vectorize (FullL1State d x)
 
-data L1Params x a =
+data L1Params d x a =
   L1Params
   { l1pETheta0 :: a
   , l1pOmegaBounds :: (a, a)
@@ -162,44 +163,47 @@ data L1Params x a =
   , l1pGamma :: a
   , l1pKg :: a
   , l1pK :: a
+  , l1pDA :: d (d a)
+  , l1pDB :: d a
+  , l1pDC :: d a
   , l1pP :: x (x a)
-  , l1pW :: a
   , l1pKsp :: x (x a)
   } deriving Functor
 
 
 prepareL1 ::
-  forall x u a
-  . (Metric x, F.Foldable x, u ~ Id, Floating a, SymOrd a)
-  => L1Params x a
+  forall d x u a
+  . (Metric d, F.Foldable d, Metric x, F.Foldable x, u ~ Id, Floating a, SymOrd a)
+  => L1Params d x a
   -> x (x a) -- dx/dx
   -> x a     -- dx/du
-  -> FullSystemState x a -> L1States x a -> a -> L1States x a
+  -> FullSystemState x a -> L1States d x a -> a -> L1States d x a
 prepareL1 l1params dxdx dxdu = retFun
   where
-    retFun :: FullSystemState x a -> L1States x a -> a -> L1States x a
+    retFun :: FullSystemState x a -> L1States d x a -> a -> L1States d x a
     retFun ffs l1States r =
       fullOde FullL1State { controllerState = l1States, systemState = ffs } r
 
-    fullOde :: FullL1State x a -> a -> L1States x a
+    fullOde :: FullL1State d x a -> a -> L1States d x a
     fullOde (FullL1State controllerState systemState) r =
       ddtL1States l1params dxdx dxdu r (ffsX systemState) controllerState
 
 
 ddtL1States ::
-  forall a x
-  . (Additive x, F.Foldable x, Metric x, Floating a, SymOrd a)
-  => L1Params x a
+  forall d a x
+  . ( Additive d, F.Foldable d, Metric d
+    , Additive x, F.Foldable x, Metric x, Floating a, SymOrd a)
+  => L1Params d x a
   -> x (x a) -- am
   -> x a -- b
   -> a
   -> x a
-  -> L1States x a -> L1States x a
+  -> L1States d x a -> L1States d x a
 ddtL1States L1Params{..} am b r xestimate l1states =
-  L1States xhatdot udot wqsDot
+  L1States xhatdot udot ddot wqsDot
   where
     wqsHat :: WQS x a
-    L1States xhat u wqsHat = l1states
+    L1States xhat u d wqsHat = l1states
 
     wqsDot :: WQS x a
     wqsDot =
@@ -258,9 +262,11 @@ ddtL1States L1Params{..} am b r xestimate l1states =
     e :: a
     e = l1pKg * r - eta
 
+    ddot :: d a
+    ddot = l1pDA !* d ^+^ (l1pK * e) *^ l1pDB
+
     udot :: a
-    udot = l1pK * e
---    udot = l1pW * (l1pK * e - u)
+    udot = l1pDC `dot` d
 
 integrate :: Vectorize x => (x Double -> x Double) -> Double -> x Double -> x Double
 integrate f h x0 = devectorize $ sv $ last sol

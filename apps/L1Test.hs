@@ -42,7 +42,7 @@ ddtRoboX (FullSystemState x@(RoboX p v) (WQS omegaBar theta sigmaBar)) u  =
 fromBounds :: Fractional a => a -> a -> (a, a)
 fromBounds lb ub = (0.5 * (lb + ub), 0.5*(ub - lb))
 
-l1params :: L1Params RoboX Double
+l1params :: L1Params RoboX RoboX Double
 l1params =
   L1Params
   { l1pETheta0 = 0.1
@@ -51,20 +51,36 @@ l1params =
   , l1pThetaBounds = (RoboX 0 0, 5)
   , l1pGamma = 100e3
   , l1pKg = 1
-  , l1pK = 60
+  , l1pK = d'omega
+  -- A second-order filter for D gives a third-order input filter
+  -- overall, when combined with the outer "r - eta" loop.
+  , l1pDA = RoboX (RoboX 0               1                  )
+                  (RoboX (-(d'omega**2)) (-2*d'omega*d'zeta))
+  , l1pDB = RoboX 0 (d'omega**2)
+  -- Here is a first-order D instead for comparison.
+  --
+  -- , l1pDA = RoboX (RoboX (-d'omega) 0) (RoboX 0 0)
+  -- , l1pDB = RoboX (d'omega) 0
+  , l1pDC = RoboX 1 0
   , l1pP = RoboX (RoboX 1.41429 0.50000)
                  (RoboX 0.50000 0.7142)
-  , l1pW = 1
-  , l1pKsp = RoboX (RoboX 0 0) (RoboX 0 1)
+  , l1pKsp = RoboX (RoboX 0 0)
+                   (RoboX 0 1)
   }
+  where
+    -- This parameter specifies the bandwidth for both the outer loop
+    -- and the inner filter D(s) of the input low-pass filter.
+    d'omega = 60
+    -- This parameter specifies the damping coefficient for D(s)
+    d'zeta = 1
 
-data SimStates x a =
+data SimStates d x a =
   SimStates
   { ssX :: x a
-  , ssL1 :: L1States x a
+  , ssL1 :: L1States d x a
   } deriving (Functor, Generic, Generic1, Show)
-instance Vectorize x => Vectorize (SimStates x)
-instance (Lookup a, Lookup (x a)) => Lookup (SimStates x a)
+instance (Vectorize d, Vectorize x) => Vectorize (SimStates d x)
+instance (Lookup a, Lookup (d a), Lookup (x a)) => Lookup (SimStates d x a)
 
 main :: IO ()
 main = do
@@ -76,11 +92,12 @@ main = do
       x0 :: RoboX Double
       x0 = RoboX (-0.2) (-0.3)
 
-      l0 :: L1States RoboX Double
+      l0 :: L1States RoboX RoboX Double
       l0 =
         L1States
         { l1sXhat = RoboX (0.2) (0.1)
         , l1sU = 0
+        , l1sD = fill 0
         , l1sWqsHat = WQS {
             wqsOmega = 0.2
           , wqsTheta = fill (-0.5)
@@ -88,7 +105,7 @@ main = do
           }
         }
 
-      dfdt :: Double -> SimStates RoboX Double -> SimStates RoboX Double
+      dfdt :: Double -> SimStates RoboX RoboX Double -> SimStates RoboX RoboX Double
       dfdt t (SimStates x l1) = SimStates x' l1'
         where
           fss =
@@ -116,7 +133,7 @@ main = do
 
       simTimes = [0,0.0002..10]
       refs = map reference simTimes
-      sols :: [SimStates RoboX Double]
+      sols :: [SimStates RoboX RoboX Double]
       sols = integrate' dfdt 0.01 simTimes (SimStates x0 l0)
   putStrLn $ unlines $
     toMatlab "ret" sols ++ [" r = [" ++ unwords (map show refs) ++ "];"]
