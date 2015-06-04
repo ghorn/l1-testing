@@ -164,6 +164,7 @@ data L1Params x a =
   , l1pK :: a
   , l1pP :: x (x a)
   , l1pW :: a
+  , l1pKsp :: x (x a)
   } deriving Functor
 
 
@@ -252,7 +253,7 @@ ddtL1States L1Params{..} am b r xestimate l1states =
     eta = omegahat * u + thetahat `dot` xestimate + sigmahat
 
     xhatdot :: x a
-    xhatdot = am !* xhat ^+^ eta *^ b
+    xhatdot = am !* xhat ^+^ eta *^ b ^-^ l1pKsp !* xtilde
     -- Update the reference LPF state
     e :: a
     e = l1pKg * r - eta

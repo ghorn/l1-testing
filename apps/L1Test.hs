@@ -55,6 +55,7 @@ l1params =
   , l1pP = RoboX (RoboX 1.41429 0.50000)
                  (RoboX 0.50000 0.7142)
   , l1pW = 1
+  , l1pKsp = RoboX (RoboX 0 0) (RoboX 0 1)
   }
 
 data SimStates x a =
