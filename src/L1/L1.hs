@@ -259,7 +259,7 @@ integrate' f h times x0 = map (devectorize . sv) sol
 
     sol = D.toRows $
           ODE.odeSolveV
-          ODE.MSAdams
+          ODE.RKck
           h 1e-7 1e-5 f'
           (vs (vectorize x0))
           (SV.fromList times)
