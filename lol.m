@@ -30,8 +30,8 @@ title('Control input');
 xlabel('Time (s)');
 ylabel('Input torque (N-m)');
 xlim([0 time(end)]);
-plot(time, [ret.ssL1.l1sU]');
-legend('u');
+plot(time, [ret.ssL1.l1sU; 8*ones(size(time)); -8*ones(size(time));]');
+legend('desired input', 'maximum torque bound', 'minimum torque bound');
 
 subplot(414);
 hold on;

@@ -32,12 +32,17 @@ ddtRoboX :: Floating a => FullSystemState RoboX a -> a -> RoboX a
 ddtRoboX (FullSystemState x@(RoboX p v) (WQS omegaBar theta sigmaBar)) u  =
   RoboX
   { xPos = v
-  , xVel = (u + m*g*armLen*(cos p)/2 + sigmaBar + x `dot` theta) * omegaBar
+  , xVel = (usat u + m*g*armLen*(cos p)/2 + sigmaBar + x `dot` theta) * omegaBar
   }
   where
+    -- This approximation is a bit more linear in the mid-range than a
+    -- plain logistic function.
+    usat t = saturate 0 (maxTorque*2) 0.3 t - t*4.4 / (10 + (t / sqrt(10))**4)
     m = 1
     g = 9.8
     armLen = 0.5
+    maxTorque = 8
+    saturate center range slope t = center + range * (-0.5 + 1 / (1 + exp (-slope * t)))
 
 fromBounds :: Fractional a => a -> a -> (a, a)
 fromBounds lb ub = (0.5 * (lb + ub), 0.5*(ub - lb))

@@ -228,9 +228,16 @@ ddtL1States L1Params{..} am b r xestimate l1states =
     gp' :: (a, a)-> a -> a -> a
     gp' (scenter, snorm) th sig = unId $ gp (Id scenter, snorm) (Id th) (Id sig)
 
+    -- This approximation is a bit more linear in the mid-range than a
+    -- plain logistic function.
+    maxTorque = 8
+    saturate center range slope t = center + range * (-0.5 + 1 / (1 + exp (-slope * t)))
+    usat x = saturate 0 (maxTorque*2) 0.3 x - x*4.4 / (10 + (x / sqrt(10))**4)
+
+    u' = usat u
 
     omegahatdot,sigmahatdot :: a
-    omegahatdot = gp' l1pOmegaBounds omegahat (xtpbg * u)
+    omegahatdot = gp' l1pOmegaBounds omegahat (xtpbg * u')
     sigmahatdot = gp' l1pSigmaBounds sigmahat xtpbg
     thetahatdot :: x a
     thetahatdot = gp l1pThetaBounds thetahat (xtpbg *^ xestimate)
@@ -240,7 +247,7 @@ ddtL1States L1Params{..} am b r xestimate l1states =
     -- timestep.
 
     eta :: a
-    eta = omegahat * u + thetahat `dot` xestimate + sigmahat
+    eta = omegahat * u' + thetahat `dot` xestimate + sigmahatdot
 
     xhatdot :: x a
     xhatdot = am !* xhat ^+^ eta *^ b ^-^ l1pKsp !* xtilde
