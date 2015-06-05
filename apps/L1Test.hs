@@ -89,7 +89,7 @@ instance (Lookup a, Lookup (d a), Lookup (x a)) => Lookup (SimStates d x a)
 
 main :: IO ()
 main = do
-  let reference t = cos (2 * t / pi) + pi
+  let reference t = 2 + cos (2 * t / pi + pi)
       dxdx = RoboX (RoboX 0 1)
                    (RoboX (-1) (-1.4))
       dxdu = RoboX 0 1
